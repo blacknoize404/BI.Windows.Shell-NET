@@ -4,11 +4,11 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <PackageId>BI.Windows.Shell</PackageId>
+    <PackageId>BI.Shell</PackageId>
     <Version>1.0.0</Version>
     <Authors>blacknoize404</Authors>
     <Description>Utilidades de shell nativo de Windows para .NET: menú contextual real del explorador (IContextMenu/IContextMenu2 con puente owner-draw) y modo oscuro para menús clásicos (uxtheme por ordinal). Cero dependencias de WPF.</Description>
-    <RepositoryUrl>https://github.com/blacknoize404/BI.Windows.Shell-NET</RepositoryUrl>
+    <RepositoryUrl>https://github.com/blacknoize404/BI.Shell-NET</RepositoryUrl>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 

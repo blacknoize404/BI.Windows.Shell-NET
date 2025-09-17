@@ -1,4 +1,4 @@
-# BI.Windows.Shell
+# BI.Shell
 
 Utilidades de shell nativo de Windows para .NET — **cero dependencias de WPF** (usable desde WPF, WinForms o una app de consola con message loop).
 
@@ -9,7 +9,7 @@ Utilidades de shell nativo de Windows para .NET — **cero dependencias de WPF**
 La shell de Windows dibuja los menús clásicos (contextuales, barras de menú) con el tema claro aunque tu app sea oscura. `WindowsDarkMode` aplica el modo oscuro de uxtheme llamando a los **ordinales no documentados** (135/136) — la técnica que usa el propio `notepad.exe`:
 
 ```csharp
-using BI.Windows.Shell;
+using BI.Shell;
 
 // hwnd de la ventana (WPF: PresentationSource.FromVisual(this) → HwndSource.Handle)
 DarkModeResult r = WindowsDarkMode.Apply(hwnd, titleBar: true);
@@ -24,7 +24,7 @@ DarkModeResult r = WindowsDarkMode.Apply(hwnd, titleBar: true);
 `IContextMenu`/`IContextMenu2` con el puente owner-draw completo (`WM_INITMENU`, `WM_MEASUREITEM`, `WM_DRAWITEM`, `WM_MENUCHAR`, `WM_INITMENUPOPUP`) — los ítems que la shell marca como owner-drawn se reenvían al objeto COM para que se dibujen ellos:
 
 ```csharp
-using BI.Windows.Shell;
+using BI.Shell;
 
 // desde WPF/WinForms: reenviar los mensajes del menú en el hook de la ventana
 if (ShellContextMenu.IsMenuMessage(m.Msg) &&
