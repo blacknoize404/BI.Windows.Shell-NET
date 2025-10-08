@@ -1,4 +1,4 @@
-// BI.Shell — el MENÚ CONTEXTUAL NATIVO de Windows (IContextMenu del shell),
+// BI.Windows.Shell — el MENÚ CONTEXTUAL NATIVO de Windows (IContextMenu del shell),
 // el mismo que abre Explorer: verbos del sistema + TODAS las extensiones de terceros (7-Zip y
 // cia), con extras del anfitrión anexados al final después de una línea separada.
 // Reutilizable desde WPF, WinForms o consola STA — la lib es puros DllImport + COM, sin WPF.
@@ -16,7 +16,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 
-namespace BI.Shell;
+namespace BI.Windows.Shell;
 
 /// <summary>Ítem EXTRA que el anfitrión anexa al final del menú del shell (tras una línea separada).</summary>
 public sealed record ShellMenuExtra(string Label, Action Run);
@@ -126,7 +126,7 @@ public static class ShellContextMenu
                                                IReadOnlyList<ShellMenuExtra>? extras = null)
     {
         if (!GetCursorPos(out var p))
-        { Emit(new { app = "BI.Shell", op = "ShowAtCursor", err = "GetCursorPos falló", at = DateTime.Now.ToString("s") }); return ShellMenuResult.InteropFailed; }
+        { Emit(new { app = "BI.Windows.Shell", op = "ShowAtCursor", err = "GetCursorPos falló", at = DateTime.Now.ToString("s") }); return ShellMenuResult.InteropFailed; }
         return ShowCore(path, hwndOwner, p.X, p.Y, extras);
     }
 
@@ -191,7 +191,7 @@ public static class ShellContextMenu
             return ShellMenuResult.Shown;
         }
         catch (Exception ex)
-        { Emit(new { app = "BI.Shell", op = "Show", err = ex.GetType().Name + ": " + ex.Message, at = DateTime.Now.ToString("s") }); return ShellMenuResult.InteropFailed; }
+        { Emit(new { app = "BI.Windows.Shell", op = "Show", err = ex.GetType().Name + ": " + ex.Message, at = DateTime.Now.ToString("s") }); return ShellMenuResult.InteropFailed; }
         finally
         {
             if (hMenu != IntPtr.Zero) DestroyMenu(hMenu);

@@ -1,4 +1,4 @@
-# BI.Shell
+# BI.Windows.Shell
 
 Utilidades de shell nativo de Windows para .NET — **cero dependencias de WPF** (usable desde WPF, WinForms o una app de consola con message loop).
 

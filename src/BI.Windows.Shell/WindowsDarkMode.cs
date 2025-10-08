@@ -1,4 +1,4 @@
-// BI.Shell — Tema OSCURO para los menús clásicos que dibuja la shell
+// BI.Windows.Shell — Tema OSCURO para los menús clásicos que dibuja la shell
 // (el truco de las propias apps de Microsoft: ordinales NO documentados de uxtheme.dll).
 // Mejor-efuerzo declarado: si el build del OS no obedece, queda como siempre y lo dice.
 // Pitfalls YA PROBADOS: delegados NOMBRADOS (el marshal rechaza genéricos — el candado
@@ -8,7 +8,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace BI.Shell;
+namespace BI.Windows.Shell;
 
 /// <summary>Cómo quedó la aplicación del modo oscuro — medible, no prometido.</summary>
 public sealed record DarkModeResult(bool Applied, int PreviousMode, int OrdinalUsed, string? Error);
@@ -41,7 +41,7 @@ public static class WindowsDarkMode
             if (mode is null) return new(false, 0, 0, "delegado inaccesible para el ordinal 135");
             var prev = mode(2);                                          // 2 = ForceDark
             FlushMenus();
-            Emit(new { app = "BI.Shell", op = "DarkMode.Apply", os = Environment.OSVersion.VersionString, applied = prev >= 0, previousMode = prev, ordinal = 135 });
+            Emit(new { app = "BI.Windows.Shell", op = "DarkMode.Apply", os = Environment.OSVersion.VersionString, applied = prev >= 0, previousMode = prev, ordinal = 135 });
             return new(prev >= 0, prev, 135, null);
         }
         catch (Exception ex) { return new(false, 0, 0, ex.GetType().Name + ": " + ex.Message); }
