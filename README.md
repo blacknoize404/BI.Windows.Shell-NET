@@ -1,54 +1,91 @@
 # BI.Windows.Shell
 
-Utilidades de shell nativo de Windows para .NET — **cero dependencias de WPF** (usable desde WPF, WinForms o una app de consola con message loop).
+Windows shell integration for .NET — no native code of its own, just P/Invoke and COM:
 
-## Qué hay dentro
+- **Dark mode** for the title bar and for the classic menus the shell draws.
+- **Click-through windows** and windows hidden from the taskbar, for widgets and overlays.
+- **The native Explorer context menu** for any file, with every system verb and every
+  third-party extension (7-Zip and friends), plus your own items appended at the end.
 
-### `WindowsDarkMode` — menús clásicos en oscuro
+The Java edition lives at [BI.Windows.Shell-JAVA](https://github.com/blacknoize404/BI.Windows.Shell-JAVA)
+(Foreign Function & Memory API, same feature set).
 
-La shell de Windows dibuja los menús clásicos (contextuales, barras de menú) con el tema claro aunque tu app sea oscura. `WindowsDarkMode` aplica el modo oscuro de uxtheme llamando a los **ordinales no documentados** (135/136) — la técnica que usa el propio `notepad.exe`:
+> **Documentación en español**: [README.es.md](README.es.md)
 
-```csharp
-using BI.Shell;
+## Install
 
-// hwnd de la ventana (WPF: PresentationSource.FromVisual(this) → HwndSource.Handle)
-DarkModeResult r = WindowsDarkMode.Apply(hwnd, titleBar: true);
-// r: applied · previousMode · ordinal usado — la evidencia se reporta, no se adivina
+The library is a single `net8.0-windows` project. Reference it directly or pack it:
+
+```xml
+<ProjectReference Include="..\BI.Windows.Shell\BI.Windows.Shell.csproj" />
 ```
 
-- `WindowsDarkMode.FlushMenus()` — re-tema los menús tras `ClearMenu`/recrear (la shell clona el menú y pierde el tema).
-- `Telemetry`: gancho `Action<string>` opcional — cada Apply/Flush emite un JSON de evidencia.
+Requires Windows 10 1809 or later. Every public entry point returns an explicit result
+record instead of throwing: nothing from the interop reaches the host as an exception.
 
-### `ShellContextMenu` — el menú contextual REAL del Explorador
-
-`IContextMenu`/`IContextMenu2` con el puente owner-draw completo (`WM_INITMENU`, `WM_MEASUREITEM`, `WM_DRAWITEM`, `WM_MENUCHAR`, `WM_INITMENUPOPUP`) — los ítems que la shell marca como owner-drawn se reenvían al objeto COM para que se dibujen ellos:
+## Dark mode
 
 ```csharp
-using BI.Shell;
-
-// desde WPF/WinForms: reenviar los mensajes del menú en el hook de la ventana
-if (ShellContextMenu.IsMenuMessage(m.Msg) &&
-    ShellContextMenu.TryHandleMenuMessage(m.Msg, m.WParam, m.LParam, out var res))
-{ m.Result = res; handled = true; }
-
-// mostrar el menú de un archivo en el punto del clic derecho
-ShellMenuResult r = ShellContextMenu.Show(path, hwnd, x, y,
-    extras: new[] { new ShellMenuExtra("Abrir ubicación", () => AbrirUbicacion(path)) });
+DarkModeResult r = WindowsDarkMode.Apply(hwnd);          // dark title bar and menus
+WindowsDarkMode.Set(hwnd, dark: false, titleBar: true);  // back to light
+WindowsDarkMode.FlushMenus();                            // re-read the menu theme cache
 ```
 
-- `ShowAtCursor` — la variante que posiciona en el cursor actual.
-- `ShellMenuExtra` — ítems propios mezclados con los del shell (separadores incluidos).
-- Resultados explícitos (`InteropFailed`, `NotSta`, `NoFile`…): nada silencioso — la llamada exige STA y el archivo existente, y lo declara.
-- `Telemetry`: misma evidencia JSON por operación.
+This is best effort and honest about it: the app-mode switch goes through an undocumented
+`uxtheme.dll` ordinal (135, `SetPreferredAppMode`) that has survived every Windows 10/11
+build so far but is guaranteed by no one. The result tells you what actually happened
+(`Applied`, `PreviousMode`, `Ordinal`, `Error`) — on a Windows that refuses, everything
+stays as it was and the record says so.
 
-## Requisitos
+## Explorer context menu
 
-- .NET 8 — `net8.0-windows`
-- Windows 10 1809+ (los ordinales de uxtheme existen desde entonces; en builds antiguos `Apply` devuelve `applied:false` declarado, no explota)
-- El hilo que llama a `ShellContextMenu` debe ser STA con message loop
+```csharp
+ShellMenuResult r = ShellContextMenu.ShowAtCursor(@"C:\Users\me\picture.png", hwnd,
+    new[] { new ShellMenuExtra("Copy path", () => Clipboard.SetText(path)) });
+```
 
-## Filosofía
+Call it from a single-threaded-apartment thread (the WPF dispatcher thread is one).
+`ShellMenuResult` is `Shown`, `NoFile`, `NotSta` or `InteropFailed` — each one means
+what it says, and `InteropFailed` comes with a telemetry line explaining why.
 
-Nada silencioso: cada resultado (éxito o rechazo) viaja en enums/records explícitos y se puede telemetrizar. Cero P/Invoke genérico: los layouts están verificados contra `winioctl.h`/SDK.
+Shell extensions paint their own menu items, and they only do it if someone forwards
+the owner-draw messages to `IContextMenu2.HandleMenuMsg`. By default the library
+temporarily subclasses the owner window while the popup is open and takes care of it
+itself. If the host already hooks its window procedure (a WPF `HwndSourceHook`, a
+custom `WndProc`), pass `subclass: false` and forward the messages with
+`ShellContextMenu.IsMenuMessage` / `TryHandleMenuMessage` instead.
 
-Origen: extraído del motor de búsqueda **Buscador High Level** (BlackNoizE Apps) — el menú contextual y el tema oscuro de su GUI, empaquetados como librería reutilizable.
+`Telemetry` on both classes receives one JSON line per call, if you want a record of
+what ran.
+
+## Click-through and taskbar visibility
+
+Neither WPF nor WinForms lets a window ignore the mouse and let clicks fall through to
+whatever is underneath. `WindowStyles` asks Windows for it (`WS_EX_TRANSPARENT`, plus
+`WS_EX_LAYERED` and `WS_EX_NOACTIVATE` so it doesn't steal focus):
+
+```csharp
+IntPtr hwnd = WindowHandles.FindOwnWindow("My widget");    // a top-level window of this process
+ClickThroughResult r = WindowStyles.SetClickThrough(hwnd, true);
+// r.Applied: the style read back is the one requested; r.Error: why not, or null
+
+WindowStyles.SetClickThrough(hwnd, false);                 // takes the mouse again
+bool passing = WindowStyles.IsClickThrough(hwnd);
+WindowStyles.SetHiddenFromTaskbar(hwnd, true);             // no taskbar button, no Alt+Tab entry
+bool hidden  = WindowStyles.IsHiddenFromTaskbar(hwnd);
+IntPtr top   = WindowHandles.Foreground();                 // the system's foreground window
+```
+
+In WPF the usual way to an HWND is `new WindowInteropHelper(window).Handle`;
+`WindowHandles.FindOwnWindow` is for the cases where that doesn't apply — a window owned
+by another toolkit in the same process, or a plain console/host window.
+
+Two honest quirks. A translucent window only receives the mouse where its pixels are not
+fully transparent, so empty areas take no clicks even with click-through off. And Windows
+only reads the taskbar style when the window is shown, so a visible window blinks once
+while `SetHiddenFromTaskbar` flips it. If the window is closed and shown again it is a
+different native window: call it again.
+
+## License
+
+This project is distributed under the [Apache License 2.0](LICENSE).

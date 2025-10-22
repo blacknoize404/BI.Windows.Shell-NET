@@ -113,28 +113,60 @@ public static class ShellContextMenu
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+    [DllImport("user32.dll")] static extern IntPtr SetWindowLongPtrW(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+    [DllImport("user32.dll")] static extern IntPtr CallWindowProcW(IntPtr prevProc, IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    const int GWLP_WNDPROC = -4;
+    static WndProcDelegate? _stub;
+    static IntPtr _prevProc;
+    delegate IntPtr WndProcDelegate(IntPtr hwnd, int msg, IntPtr wp, IntPtr lp);   // NOMBRADO (el marshal rechaza genéricos)
 
     static IContextMenu2? _live;   // vive SOLO mientras el popup está en pantalla (un popup a la vez — declarado)
 
-    /// <summary>Abre el menú del shell en las coordenadas de pantalla dadas (device pixels).</summary>
+    /// <summary>Intercambia el WndProc por el nuestro mientras el menú está abierto: los mensajes
+    /// owner-draw se consumen aquí y el resto sigue su camino (CallWindowProc). Se restaura al cerrar.</summary>
+    static bool SubclassWindow(IntPtr hwnd)
+    {
+        _stub ??= MenuWndProc;
+        var old = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_stub));
+        if (old == IntPtr.Zero) return false;
+        _prevProc = old;
+        return true;
+    }
+
+    static IntPtr MenuWndProc(IntPtr hwnd, int msg, IntPtr wp, IntPtr lp)
+    {
+        try
+        {
+            if (IsMenuMessage(msg) && TryHandleMenuMessage(msg, wp, lp, out var res))
+                return msg is 0x2B or 0x2C ? (IntPtr)1 : res;   // MEASUREITEM/DRAWITEM → TRUE: lo dibujó la extensión
+            return CallWindowProcW(_prevProc, hwnd, msg, wp, lp);
+        }
+        catch { return IntPtr.Zero; }   // una excepción no puede cruzar a código nativo
+    }
+
+    /// <summary>Abre el menú del shell en las coordenadas de pantalla dadas (device pixels).
+    /// subclass: con true la lib subclasifica la ventana mientras el menú está abierto y los
+    /// ítems owner-draw se pintan solos; con false el anfitrión reenvía con TryHandleMenuMessage.</summary>
     public static ShellMenuResult Show(string path, IntPtr hwndOwner, int screenX, int screenY,
-                                       IReadOnlyList<ShellMenuExtra>? extras = null)
-        => ShowCore(path, hwndOwner, screenX, screenY, extras);
+                                       IReadOnlyList<ShellMenuExtra>? extras = null, bool subclass = true)
+        => ShowCore(path, hwndOwner, screenX, screenY, extras, subclass);
 
     /// <summary>Abre el menú en la posición actual del CURSOR: GetCursorPos DENTRO de la lib (DPI de monitores con escala ≠100%).</summary>
     public static ShellMenuResult ShowAtCursor(string path, IntPtr hwndOwner,
-                                               IReadOnlyList<ShellMenuExtra>? extras = null)
+                                               IReadOnlyList<ShellMenuExtra>? extras = null, bool subclass = true)
     {
         if (!GetCursorPos(out var p))
         { Emit(new { app = "BI.Windows.Shell", op = "ShowAtCursor", err = "GetCursorPos falló", at = DateTime.Now.ToString("s") }); return ShellMenuResult.InteropFailed; }
-        return ShowCore(path, hwndOwner, p.X, p.Y, extras);
+        return ShowCore(path, hwndOwner, p.X, p.Y, extras, subclass);
     }
 
     static ShellMenuResult ShowCore(string path, IntPtr hwndOwner, int screenX, int screenY,
-                                    IReadOnlyList<ShellMenuExtra>? extras)
+                                    IReadOnlyList<ShellMenuExtra>? extras, bool subclass)
     {
         IntPtr pidl = IntPtr.Zero, folderPtr = IntPtr.Zero, hMenu = IntPtr.Zero, apidl = IntPtr.Zero;
         object? icmObj = null, folderObj = null;
+        bool hooked = false;
         try
         {
             if (hwndOwner == IntPtr.Zero) return ShellMenuResult.InteropFailed;
@@ -170,6 +202,11 @@ public static class ShellContextMenu
             }
 
             WindowsDarkMode.FlushMenus();                             // la shell invalida la caché del tema a veces
+            if (subclass && _live is not null)
+            {
+                hooked = SubclassWindow(hwndOwner);                     // los owner-draw se pintan solos mientras el menú viva
+                if (!hooked) Emit(new { app = "BI.Windows.Shell", op = "Subclass", err = "SetWindowLongPtr devolvió 0", at = DateTime.Now.ToString("s") });
+            }
             SetForegroundWindow(hwndOwner);
             int chosen = TrackPopupMenuEx(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenX, screenY, hwndOwner, IntPtr.Zero);
             PostMessage(hwndOwner, WM_NULL, IntPtr.Zero, IntPtr.Zero);   // desbloquea el popup del shell
@@ -199,6 +236,7 @@ public static class ShellContextMenu
             if (folderObj != null) try { Marshal.ReleaseComObject(folderObj); } catch { }
             if (apidl != IntPtr.Zero) Marshal.FreeCoTaskMem(apidl);
             if (pidl != IntPtr.Zero) ILFree(pidl);
+            if (hooked) try { SetWindowLongPtrW(hwndOwner, GWLP_WNDPROC, _prevProc); } catch { }
             _live = null;
         }
     }

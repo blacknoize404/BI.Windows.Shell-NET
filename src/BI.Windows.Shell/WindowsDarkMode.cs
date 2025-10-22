@@ -23,15 +23,19 @@ public static class WindowsDarkMode
     delegate void Nk();              // FlushMenuThemes — ídem
 
     /// <summary>Aplica ForceDark para TODO lo que la shell dibuje a partir de ahora en este proceso + barra de título DWM (best-effort).</summary>
-    public static DarkModeResult Apply(IntPtr hwnd, bool titleBar = true)
+    public static DarkModeResult Apply(IntPtr hwnd, bool titleBar = true) => Set(hwnd, true, titleBar);
+
+    /// <summary>Fuerza el tema oscuro o el claro (2 = ForceDark, 3 = ForceLight — la vuelta también existe,
+    /// paridad con la edición Java). hwnd = la ventana cuya barra de título cambia; Zero si solo importan los menús.</summary>
+    public static DarkModeResult Set(IntPtr hwnd, bool dark, bool titleBar)
     {
         try
         {
             if (hwnd != IntPtr.Zero && titleBar)
             {
-                var dark = 1;
-                if (DwmSetWindowAttribute(hwnd, 20, ref dark, 4) != 0)   // attr 20 en builds modernos
-                    DwmSetWindowAttribute(hwnd, 19, ref dark, 4);        // fallback Win10 viejo
+                var v = dark ? 1 : 0;
+                if (DwmSetWindowAttribute(hwnd, 20, ref v, 4) != 0)      // attr 20 en builds modernos
+                    DwmSetWindowAttribute(hwnd, 19, ref v, 4);           // fallback Win10 viejo
             }
             var h = LoadLibrary("uxtheme.dll");
             if (h == IntPtr.Zero) return new(false, 0, 0, "uxtheme.dll no cargó");
@@ -39,9 +43,9 @@ public static class WindowsDarkMode
             if (p == IntPtr.Zero) return new(false, 0, 0, "ordinal 135 no existe en este build del OS");
             var mode = Marshal.GetDelegateForFunctionPointer(p, typeof(IAMode)) as IAMode;
             if (mode is null) return new(false, 0, 0, "delegado inaccesible para el ordinal 135");
-            var prev = mode(2);                                          // 2 = ForceDark
+            var prev = mode(dark ? 2 : 3);
             FlushMenus();
-            Emit(new { app = "BI.Windows.Shell", op = "DarkMode.Apply", os = Environment.OSVersion.VersionString, applied = prev >= 0, previousMode = prev, ordinal = 135 });
+            Emit(new { app = "BI.Windows.Shell", op = "DarkMode.Apply", os = Environment.OSVersion.VersionString, dark, applied = prev >= 0, previousMode = prev, ordinal = 135 });
             return new(prev >= 0, prev, 135, null);
         }
         catch (Exception ex) { return new(false, 0, 0, ex.GetType().Name + ": " + ex.Message); }
